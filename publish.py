@@ -37,33 +37,35 @@ text = text_file.read_text(encoding="utf-8").strip()
 
 BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Публикуем фото (если есть) + текст
 if image_file.exists():
-    print(f"Отправляю фото из {image_file}...")
+    # Фото + текст одним постом (caption, лимит 1024 символа)
+    if len(text) > 1024:
+        print(f"ВНИМАНИЕ: текст {len(text)} символов > 1024, обрезаю до лимита.")
+        text = text[:1021] + "..."
+    print(f"Отправляю пост с фото...")
     with open(image_file, "rb") as f:
         r = requests.post(
             f"{BASE}/sendPhoto",
-            data={"chat_id": CHANNEL},
+            data={"chat_id": CHANNEL, "caption": text},
             files={"photo": f},
             timeout=60,
         )
     if not r.json().get("ok"):
-        print(f"Ошибка фото: {r.json()}")
+        print(f"Ошибка: {r.json()}")
         exit(1)
-    print(f"Фото отправлено: message_id={r.json()['result']['message_id']}")
+    print(f"Опубликовано: message_id={r.json()['result']['message_id']}")
 else:
-    print("Картинки нет — только текст.")
-
-print("Отправляю текст...")
-r2 = requests.post(
-    f"{BASE}/sendMessage",
-    json={"chat_id": CHANNEL, "text": text},
-    timeout=60,
-)
-if not r2.json().get("ok"):
-    print(f"Ошибка текста: {r2.json()}")
-    exit(1)
-print(f"Текст отправлен: message_id={r2.json()['result']['message_id']}")
+    # Только текст (лимит 4096 символов)
+    print("Картинки нет, отправляю текст...")
+    r = requests.post(
+        f"{BASE}/sendMessage",
+        json={"chat_id": CHANNEL, "text": text},
+        timeout=60,
+    )
+    if not r.json().get("ok"):
+        print(f"Ошибка: {r.json()}")
+        exit(1)
+    print(f"Опубликовано: message_id={r.json()['result']['message_id']}")
 
 # Помечаем как опубликованный
 Path("published").mkdir(exist_ok=True)
