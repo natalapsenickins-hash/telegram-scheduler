@@ -9,6 +9,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # нужно для коммита маркера published/
 
     steps:
       - name: Скачать репозиторий

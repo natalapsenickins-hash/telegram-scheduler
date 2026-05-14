@@ -42,16 +42,7 @@ if image_file.exists():
     if len(text) > 1024:
         print(f"ВНИМАНИЕ: текст {len(text)} символов > 1024, обрезаю до лимита.")
         text = text[:1021] + "..."
-    print(f"Токен (длина): {len(BOT_TOKEN)}, канал: {CHANNEL}")
-    # Диагностика: getMe
-    me = requests.get(f"{BASE}/getMe", timeout=10)
-    print(f"getMe: status={me.status_code}, ok={me.json().get('ok')}, name={me.json().get('result', {}).get('username')}")
-    # Диагностика: getChat
-    chat = requests.get(f"{BASE}/getChat?chat_id={CHANNEL}", timeout=10)
-    print(f"getChat: status={chat.status_code}, ok={chat.json().get('ok')}, desc={chat.json().get('description','')[:50]}")
-    # Отправляем фото
-    img_size = image_file.stat().st_size
-    print(f"Отправляю пост с фото... (файл: {image_file}, размер: {img_size} байт)")
+    print(f"Отправляю пост с фото...")
     with open(image_file, "rb") as f:
         r = requests.post(
             f"{BASE}/sendPhoto",
@@ -59,9 +50,8 @@ if image_file.exists():
             files={"photo": ("photo.jpg", f, "image/jpeg")},
             timeout=60,
         )
-    print(f"sendPhoto статус: {r.status_code}, ответ: {r.text[:300]}")
     if not r.json().get("ok"):
-        print(f"Ошибка sendPhoto: {r.json()}")
+        print(f"Ошибка: {r.json()}")
         exit(1)
     print(f"Опубликовано: message_id={r.json()['result']['message_id']}")
 else:
