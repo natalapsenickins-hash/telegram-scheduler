@@ -42,31 +42,24 @@ if image_file.exists():
     if len(text) > 1024:
         print(f"ВНИМАНИЕ: текст {len(text)} символов > 1024, обрезаю до лимита.")
         text = text[:1021] + "..."
+    print(f"Токен (длина): {len(BOT_TOKEN)}, канал: {CHANNEL}")
+    # Диагностика: getMe
+    me = requests.get(f"{BASE}/getMe", timeout=10)
+    print(f"getMe: status={me.status_code}, ok={me.json().get('ok')}, name={me.json().get('result', {}).get('username')}")
+    # Диагностика: getChat
+    chat = requests.get(f"{BASE}/getChat?chat_id={CHANNEL}", timeout=10)
+    print(f"getChat: status={chat.status_code}, ok={chat.json().get('ok')}, desc={chat.json().get('description','')[:50]}")
+    # Отправляем фото
     img_size = image_file.stat().st_size
     print(f"Отправляю пост с фото... (файл: {image_file}, размер: {img_size} байт)")
-    print(f"Токен (длина): {len(BOT_TOKEN)}, канал: {CHANNEL}")
-    # Сначала тест sendMessage
-    test_r = requests.post(f"{BASE}/sendMessage",
-        json={"chat_id": CHANNEL, "text": "🔧 тест связи (удалить)"},
-        timeout=30)
-    print(f"sendMessage test: status={test_r.status_code}, ok={test_r.json().get('ok')}")
-    if test_r.json().get("ok"):
-        msg_id = test_r.json()["result"]["message_id"]
-        requests.post(f"{BASE}/deleteMessage",
-            json={"chat_id": CHANNEL, "message_id": msg_id}, timeout=10)
-    # Теперь отправляем фото
     with open(image_file, "rb") as f:
-        first_bytes = f.read(4)
-        f.seek(0)
-        print(f"Первые 4 байта файла: {first_bytes.hex()}")
         r = requests.post(
             f"{BASE}/sendPhoto",
             data={"chat_id": CHANNEL, "caption": text},
             files={"photo": ("photo.jpg", f, "image/jpeg")},
             timeout=60,
         )
-    print(f"sendPhoto HTTP статус: {r.status_code}")
-    print(f"sendPhoto ответ: {r.text[:500]}")
+    print(f"sendPhoto статус: {r.status_code}, ответ: {r.text[:300]}")
     if not r.json().get("ok"):
         print(f"Ошибка sendPhoto: {r.json()}")
         exit(1)
