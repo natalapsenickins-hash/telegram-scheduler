@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime
 import pytz
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_TOKEN = os.environ["BOT_TOKEN"].strip()  # убираем случайный пробел/перенос из Secret
 CHANNEL = "-1002124671575"  # числовой ID канала @bezanestezii_np
 MOSCOW = pytz.timezone("Europe/Moscow")
 
