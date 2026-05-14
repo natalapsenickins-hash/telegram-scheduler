@@ -11,7 +11,7 @@ from datetime import datetime
 import pytz
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHANNEL = "@bezanestezii_np"
+CHANNEL = "-1002124671575"  # числовой ID канала @bezanestezii_np
 MOSCOW = pytz.timezone("Europe/Moscow")
 
 today = datetime.now(MOSCOW).strftime("%Y-%m-%d")
