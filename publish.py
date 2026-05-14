@@ -44,10 +44,11 @@ if image_file.exists():
         text = text[:1021] + "..."
     print(f"Отправляю пост с фото...")
     with open(image_file, "rb") as f:
+        # Явно указываем image/jpeg — файл может быть JPEG с расширением .png
         r = requests.post(
             f"{BASE}/sendPhoto",
             data={"chat_id": CHANNEL, "caption": text},
-            files={"photo": f},
+            files={"photo": ("photo.jpg", f, "image/jpeg")},
             timeout=60,
         )
     if not r.json().get("ok"):
