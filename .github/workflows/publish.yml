@@ -37,12 +37,3 @@ jobs:
         with:
           commit_message: "published: $(date +'%Y-%m-%d')"
           file_pattern: 'published/*.txt'
-
-      - name: Уведомить об ошибке в Telegram
-        if: failure()
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\": \"-1002124671575\", \"text\": \"⚠️ Ошибка публикации поста. Проверь Actions: https://github.com/natalapsenickins-hash/telegram-scheduler/actions\"}"
