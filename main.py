@@ -7,53 +7,35 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ──────────────────────────────────────────────
-# Настройки (берутся из переменных окружения)
-# ──────────────────────────────────────────────
-BOT_TOKEN        = os.getenv("BOT_TOKEN")           # Токен от BotFather
-CHANNEL_ID       = os.getenv("CHANNEL_ID", "")      # ID канала, напр. -1001234567890
-ADMIN_ID         = os.getenv("ADMIN_ID", "")        # Ваш личный Telegram ID (для служебных сообщений)
-YUKASSA_SHOP_ID  = os.getenv("YUKASSA_SHOP_ID")     # ID магазина в ЮКассе
-YUKASSA_SECRET   = os.getenv("YUKASSA_SECRET_KEY")  # Секретный ключ ЮКассы
-PRICE_RUB        = os.getenv("PRICE_RUB", "990")    # Цена книги в рублях
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL")         # Ваш URL на Railway (без слэша в конце)
-BOOK_TITLE       = os.getenv("BOOK_TITLE", "PDF-книга")  # Название книги
+BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
+CHANNEL_ID       = os.getenv("CHANNEL_ID", "")
+YUKASSA_SHOP_ID  = os.getenv("YUKASSA_SHOP_ID", "")
+YUKASSA_SECRET   = os.getenv("YUKASSA_SECRET_KEY", "")
+PRICE_RUB        = os.getenv("PRICE_RUB", "990")
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL", "")
+BOOK_TITLE       = os.getenv("BOOK_TITLE", "PDF-kniga")
+ADMIN_ID         = os.getenv("ADMIN_ID", "")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN)
-BOT_USERNAME = None  # Заполняется при старте
+BOT_USERNAME = None
 
 
-# ──────────────────────────────────────────────
-# Создание платёжной ссылки ЮКасса
-# ──────────────────────────────────────────────
 async def create_yukassa_payment(chat_id: int, user_name: str) -> str:
-    """Создаёт платёж в ЮКассе и возвращает ссылку на оплату."""
     idempotence_key = str(uuid.uuid4())
-
     payload = {
-        "amount": {
-            "value": f"{float(PRICE_RUB):.2f}",
-            "currency": "RUB"
-        },
+        "amount": {"value": f"{float(PRICE_RUB):.2f}", "currency": "RUB"},
         "confirmation": {
             "type": "redirect",
-            "return_url": f"https://t.me/{BOT_USERNAME}"  # Возврат в бота после оплаты
+            "return_url": f"https://t.me/{BOT_USERNAME}"
         },
         "capture": True,
-        "description": f"{BOOK_TITLE} — {user_name}",
-        "metadata": {
-            "telegram_chat_id": str(chat_id)  # Сохраняем ID пользователя
-        }
+        "description": f"{BOOK_TITLE} - {user_name}",
+        "metadata": {"telegram_chat_id": str(chat_id)}
     }
-
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(
             "https://api.yookassa.ru/v3/payments",
@@ -62,105 +44,73 @@ async def create_yukassa_payment(chat_id: int, user_name: str) -> str:
             headers={"Idempotence-Key": idempotence_key}
         )
         resp.raise_for_status()
-        data = resp.json()
-
-    return data["confirmation"]["confirmation_url"]
+    return resp.json()["confirmation"]["confirmation_url"]
 
 
-# ──────────────────────────────────────────────
-# Отправка одноразовой ссылки-приглашения
-# ──────────────────────────────────────────────
 async def send_invite_link(chat_id: int):
-    """Создаёт одноразовую ссылку в канал и отправляет покупателю."""
     try:
         invite = await bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
-            member_limit=1,          # Одноразовая — нельзя передать другому
-            name=f"Покупка tg:{chat_id}"
+            member_limit=1,
+            name=f"Buy tg:{chat_id}"
         )
-
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📖 Войти в канал с книгой", url=invite.invite_link)
+            InlineKeyboardButton("Open channel with book", url=invite.invite_link)
         ]])
-
         await bot.send_message(
             chat_id=chat_id,
-            text=(
-                "✅ *Оплата прошла успешно!* Спасибо за покупку!\n\n"
-                f"Нажмите кнопку ниже, чтобы войти в закрытый канал с {BOOK_TITLE}.\n\n"
-                "⚠️ Ссылка *одноразовая* — не передавайте её другим людям."
-            ),
-            parse_mode="Markdown",
+            text="Payment received! Thank you!\n\nClick the button below to join the channel.\n\nThis link is one-time use only.",
             reply_markup=keyboard
         )
-        logger.info(f"✅ Ссылка отправлена пользователю {chat_id}")
-
+        logger.info(f"Invite link sent to {chat_id}")
     except Exception as e:
-        logger.error(f"❌ Ошибка отправки ссылки пользователю {chat_id}: {e}")
-        # Уведомляем пользователя, что что-то пошло не так
+        logger.error(f"Error sending invite to {chat_id}: {e}")
         try:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    "✅ Оплата получена, но произошла техническая ошибка при отправке ссылки.\n"
-                    "Пожалуйста, напишите нам — мы разберёмся вручную."
-                )
-            )
+            await bot.send_message(chat_id=chat_id, text="Payment received but error sending link. Please contact support.")
         except Exception:
             pass
 
 
-# ──────────────────────────────────────────────
-# FastAPI приложение
-# ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Настройка вебхука при запуске."""
     global BOT_USERNAME
     try:
         me = await bot.get_me()
         BOT_USERNAME = me.username
-        logger.info(f"🤖 Бот @{BOT_USERNAME} запущен.")
-
+        logger.info(f"Bot @{BOT_USERNAME} started.")
         if WEBHOOK_URL:
             tg_webhook = f"{WEBHOOK_URL}/telegram/webhook"
             await bot.set_webhook(tg_webhook)
-            logger.info(f"✅ Вебхук установлен: {tg_webhook}")
+            logger.info(f"Webhook set: {tg_webhook}")
         else:
-            logger.warning("⚠️ WEBHOOK_URL не задан — вебхук не установлен. Добавьте его в переменные Railway.")
+            logger.warning("WEBHOOK_URL not set - webhook not configured.")
     except Exception as e:
-        logger.error(f"Ошибка при запуске: {e}")
+        logger.error(f"Startup error: {e}")
     yield
-    logger.info("Бот остановлен.")
+    logger.info("Bot stopped.")
+
 
 app = FastAPI(lifespan=lifespan)
 
 
-# ──────────────────────────────────────────────
-# Эндпоинт: вебхук от Telegram
-# ──────────────────────────────────────────────
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, bot)
 
-    # Бот добавлен в новый чат/канал — сообщаем ID администратору
     if update.my_chat_member:
         chat = update.my_chat_member.chat
         new_status = update.my_chat_member.new_chat_member.status
         if new_status in ("administrator", "member"):
-            msg = (
-                f"✅ Бот добавлен в чат!\n"
-                f"Название: {chat.title}\n"
-                f"ID канала: <code>{chat.id}</code>\n\n"
-                f"Скопируйте ID и добавьте в Railway как переменную CHANNEL_ID"
-            )
-            logger.info(f"Бот добавлен в чат {chat.title} (ID: {chat.id})")
+            logger.info(f"Bot added to chat: {chat.title} (ID: {chat.id})")
             if ADMIN_ID:
                 try:
-                    await bot.send_message(chat_id=int(ADMIN_ID), text=msg, parse_mode="HTML")
+                    await bot.send_message(
+                        chat_id=int(ADMIN_ID),
+                        text=f"Bot added to: {chat.title}\nChannel ID: {chat.id}\n\nAdd this as CHANNEL_ID in Railway."
+                    )
                 except Exception as e:
-                    logger.error(f"Не удалось отправить сообщение администратору: {e}")
+                    logger.error(f"Could not notify admin: {e}")
 
     if update.message and update.message.text:
         text = update.message.text.strip()
@@ -170,22 +120,41 @@ async def telegram_webhook(request: Request):
         if text.startswith("/start"):
             try:
                 payment_url = await create_yukassa_payment(chat_id, user.first_name)
-
                 keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        f"💳 Оплатить {PRICE_RUB} ₽",
-                        url=payment_url
-                    )
+                    InlineKeyboardButton(f"Pay {PRICE_RUB} RUB", url=payment_url)
                 ]])
-
                 await update.message.reply_text(
-                    f"Привет, {user.first_name}! 👋\n\n"
-                    f"Здесь вы можете купить *{BOOK_TITLE}* за *{PRICE_RUB} ₽*.\n\n"
-                    "После оплаты вы *автоматически* получите ссылку для входа в закрытый канал с книгой.",
-                    parse_mode="Markdown",
+                    f"Hello, {user.first_name}!\n\nBuy {BOOK_TITLE} for {PRICE_RUB} RUB.\nAfter payment you will receive a link to the channel automatically.",
                     reply_markup=keyboard
                 )
             except Exception as e:
-                logger.error(f"Ошибка создания платежа: {e}")
-                await update.message.reply_text(
-                    "Произошла ошибка при создании ссылки на оплату. Попробуй
+                logger.error(f"Payment creation error: {e}")
+                await update.message.reply_text("Error creating payment link. Please try again later.")
+
+    return {"ok": True}
+
+
+@app.post("/yukassa/webhook")
+async def yukassa_webhook(request: Request):
+    body = await request.json()
+    logger.info(f"YuKassa webhook: {json.dumps(body)}")
+    event = body.get("event")
+    payment = body.get("object", {})
+    if event == "payment.succeeded":
+        metadata = payment.get("metadata", {})
+        chat_id_str = metadata.get("telegram_chat_id")
+        if chat_id_str:
+            await send_invite_link(int(chat_id_str))
+        else:
+            logger.warning("No telegram_chat_id in payment metadata!")
+    return {"status": "ok"}
+
+
+@app.get("/")
+async def health():
+    return {"status": "running", "bot": BOT_USERNAME}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
