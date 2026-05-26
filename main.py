@@ -14,7 +14,7 @@ YUKASSA_SHOP_ID  = os.getenv("YUKASSA_SHOP_ID", "")
 YUKASSA_SECRET   = os.getenv("YUKASSA_SECRET_KEY", "")
 PRICE_RUB        = os.getenv("PRICE_RUB", "990")
 WEBHOOK_URL      = os.getenv("WEBHOOK_URL", "")
-BOOK_TITLE       = os.getenv("BOOK_TITLE", "PDF-kniga")
+BOOK_TITLE       = os.getenv("BOOK_TITLE", "Kniga")
 ADMIN_ID         = os.getenv("ADMIN_ID", "")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -55,18 +55,28 @@ async def send_invite_link(chat_id: int):
             name=f"Buy tg:{chat_id}"
         )
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Open channel with book", url=invite.invite_link)
+            InlineKeyboardButton("Открыть канал с книгой", url=invite.invite_link)
         ]])
-        await bot.send_message(
-            chat_id=chat_id,
-            text="Payment received! Thank you!\n\nClick the button below to join the channel.\n\nThis link is one-time use only.",
-            reply_markup=keyboard
+        msg = (
+            "✅ Оплата получена! "
+            "Спасибо за покупку!\n\n"
+            "Нажмите кнопку ниже, "
+            "чтобы войти в закрытый канал.\n\n"
+            "⚠️ Ссылка одноразовая "
+            "— не передавайте другим."
         )
+        await bot.send_message(chat_id=chat_id, text=msg, reply_markup=keyboard)
         logger.info(f"Invite link sent to {chat_id}")
     except Exception as e:
         logger.error(f"Error sending invite to {chat_id}: {e}")
         try:
-            await bot.send_message(chat_id=chat_id, text="Payment received but error sending link. Please contact support.")
+            err_msg = (
+                "Оплата получена, "
+                "но произошла ошибка "
+                "при отправке ссылки. "
+                "Напишите нам — разберёмся."
+            )
+            await bot.send_message(chat_id=chat_id, text=err_msg)
         except Exception:
             pass
 
@@ -83,7 +93,7 @@ async def lifespan(app: FastAPI):
             await bot.set_webhook(tg_webhook)
             logger.info(f"Webhook set: {tg_webhook}")
         else:
-            logger.warning("WEBHOOK_URL not set - webhook not configured.")
+            logger.warning("WEBHOOK_URL not set.")
     except Exception as e:
         logger.error(f"Startup error: {e}")
     yield
@@ -102,12 +112,12 @@ async def telegram_webhook(request: Request):
         chat = update.my_chat_member.chat
         new_status = update.my_chat_member.new_chat_member.status
         if new_status in ("administrator", "member"):
-            logger.info(f"Bot added to chat: {chat.title} (ID: {chat.id})")
+            logger.info(f"Bot added to: {chat.title} (ID: {chat.id})")
             if ADMIN_ID:
                 try:
                     await bot.send_message(
                         chat_id=int(ADMIN_ID),
-                        text=f"Bot added to: {chat.title}\nChannel ID: {chat.id}\n\nAdd this as CHANNEL_ID in Railway."
+                        text=f"Bot added to: {chat.title}\nChannel ID: {chat.id}"
                     )
                 except Exception as e:
                     logger.error(f"Could not notify admin: {e}")
@@ -121,15 +131,23 @@ async def telegram_webhook(request: Request):
             try:
                 payment_url = await create_yukassa_payment(chat_id, user.first_name)
                 keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(f"Pay {PRICE_RUB} RUB", url=payment_url)
+                    InlineKeyboardButton(
+                        f"Оплатить {PRICE_RUB} ₽",
+                        url=payment_url
+                    )
                 ]])
-                await update.message.reply_text(
-                    f"Hello, {user.first_name}!\n\nBuy {BOOK_TITLE} for {PRICE_RUB} RUB.\nAfter payment you will receive a link to the channel automatically.",
-                    reply_markup=keyboard
+                greeting = (
+                    f"Привет, {user.first_name}! 👋\n\n"
+                    f"Купите «{BOOK_TITLE}» за {PRICE_RUB} ₽.\n"
+                    f"После оплаты вы автоматически "
+                    f"получите ссылку для входа "
+                    f"в закрытый канал."
                 )
+                await update.message.reply_text(greeting, reply_markup=keyboard)
             except Exception as e:
-                logger.error(f"Payment creation error: {e}")
-                await update.message.reply_text("Error creating payment link. Please try again later.")
+                logger.error(f"Payment error: {e}")
+                err = "Ошибка при создании ссылки на оплату. Попробуйте позже."
+                await update.message.reply_text(err)
 
     return {"ok": True}
 
@@ -145,8 +163,6 @@ async def yukassa_webhook(request: Request):
         chat_id_str = metadata.get("telegram_chat_id")
         if chat_id_str:
             await send_invite_link(int(chat_id_str))
-        else:
-            logger.warning("No telegram_chat_id in payment metadata!")
     return {"status": "ok"}
 
 
