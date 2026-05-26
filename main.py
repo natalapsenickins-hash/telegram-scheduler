@@ -117,12 +117,19 @@ async def send_invite_link(chat_id: int):
 async def lifespan(app: FastAPI):
     """Настройка вебхука при запуске."""
     global BOT_USERNAME
-    me = await bot.get_me()
-    BOT_USERNAME = me.username
+    try:
+        me = await bot.get_me()
+        BOT_USERNAME = me.username
+        logger.info(f"🤖 Бот @{BOT_USERNAME} запущен.")
 
-    tg_webhook = f"{WEBHOOK_URL}/telegram/webhook"
-    await bot.set_webhook(tg_webhook)
-    logger.info(f"🤖 Бот @{BOT_USERNAME} запущен. Вебхук: {tg_webhook}")
+        if WEBHOOK_URL:
+            tg_webhook = f"{WEBHOOK_URL}/telegram/webhook"
+            await bot.set_webhook(tg_webhook)
+            logger.info(f"✅ Вебхук установлен: {tg_webhook}")
+        else:
+            logger.warning("⚠️ WEBHOOK_URL не задан — вебхук не установлен. Добавьте его в переменные Railway.")
+    except Exception as e:
+        logger.error(f"Ошибка при запуске: {e}")
     yield
     logger.info("Бот остановлен.")
 
@@ -181,12 +188,4 @@ async def telegram_webhook(request: Request):
             except Exception as e:
                 logger.error(f"Ошибка создания платежа: {e}")
                 await update.message.reply_text(
-                    "Произошла ошибка при создании ссылки на оплату. Попробуйте позже."
-                )
-
-    return {"ok": True}
-
-
-# ──────────────────────────────────────────────
-# Эндпоинт: вебхук от ЮКассы
-# ───────────────────────────────────────────
+                    "Произошла ошибка при создании ссылки на оплату. Попробуй
