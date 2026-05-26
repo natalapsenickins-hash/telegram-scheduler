@@ -14,8 +14,9 @@ YUKASSA_SHOP_ID  = os.getenv("YUKASSA_SHOP_ID", "")
 YUKASSA_SECRET   = os.getenv("YUKASSA_SECRET_KEY", "")
 PRICE_RUB        = os.getenv("PRICE_RUB", "990")
 WEBHOOK_URL      = os.getenv("WEBHOOK_URL", "")
-BOOK_TITLE       = os.getenv("BOOK_TITLE", "Kniga")
+BOOK_TITLE       = os.getenv("BOOK_TITLE", "Lichnoe Dno")
 ADMIN_ID         = os.getenv("ADMIN_ID", "")
+AUTHOR_PHOTO_ID  = os.getenv("AUTHOR_PHOTO_ID", "")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -55,30 +56,176 @@ async def send_invite_link(chat_id: int):
             name=f"Buy tg:{chat_id}"
         )
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Открыть канал с книгой", url=invite.invite_link)
+            InlineKeyboardButton(
+                "Открыть канал с книгой",
+                url=invite.invite_link
+            )
         ]])
         msg = (
             "✅ Оплата получена! "
             "Спасибо за покупку!\n\n"
             "Нажмите кнопку ниже, "
-            "чтобы войти в закрытый канал.\n\n"
+            "чтобы войти "
+            "в закрытый канал.\n\n"
             "⚠️ Ссылка одноразовая "
             "— не передавайте другим."
         )
         await bot.send_message(chat_id=chat_id, text=msg, reply_markup=keyboard)
-        logger.info(f"Invite link sent to {chat_id}")
+        logger.info(f"Invite sent to {chat_id}")
     except Exception as e:
         logger.error(f"Error sending invite to {chat_id}: {e}")
         try:
-            err_msg = (
-                "Оплата получена, "
-                "но произошла ошибка "
-                "при отправке ссылки. "
-                "Напишите нам — разберёмся."
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Оплата получена, "
+                    "но произошла ошибка "
+                    "при отправке ссылки. "
+                    "Напишите нам — разберёмся."
+                )
             )
-            await bot.send_message(chat_id=chat_id, text=err_msg)
         except Exception:
             pass
+
+
+def welcome_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("📖 Что внутри книги?", callback_data="about_book"),
+        InlineKeyboardButton("👤 Кто автор?", callback_data="about_author")
+    ]])
+
+
+def book_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("👤 Об авторе", callback_data="about_author"),
+        InlineKeyboardButton(f"💳 Купить — {PRICE_RUB} ₽", callback_data="buy")
+    ]])
+
+
+def buy_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"💳 Купить книгу — {PRICE_RUB} ₽", callback_data="buy")
+    ]])
+
+
+def welcome_text(first_name):
+    return (
+        f"Привет, {first_name}! 👋 Рада, что ты здесь.\n\n"
+        "Это бот книги «Личное дно» "
+        "— о женском "
+        "высокофункциональном "
+        "алкоголизме.\n\n"
+        "Написана от первого лица. "
+        "Для тех, у кого снаружи "
+        "всё идеально: "
+        "работа, статус, дети, "
+        "красивая картинка. "
+        "И именно поэтому "
+        "так трудно признать, "
+        "что происходит внутри.\n\n"
+        "Это не мотивационный "
+        "лозунг и не история "
+        "мгновенного успеха. "
+        "Это честный взгляд "
+        "изнутри на то, "
+        "как умные "
+        "и успешные женщины "
+        "попадают в ловушку "
+        "отрицания, "
+        "называя проблему "
+        "«просто бокалом "
+        "после тяжёлого дня»."
+    )
+
+
+def about_book_text():
+    return (
+        "Книга построена как "
+        "исследование "
+        "зависимости "
+        "изнутри, без стыда "
+        "и осуждения. "
+        "Психологи уже "
+        "используют её "
+        "как библиотерапию "
+        "для клиенток, "
+        "которым сложно "
+        "назвать вещи "
+        "своими именами.\n\n"
+        "Главные темы:\n\n"
+        "• Ловушка интеллекта: "
+        "почему умные люди "
+        "дольше всех "
+        "не замечают проблему\n"
+        "• Механизм фасада: "
+        "как годами держать "
+        "лицо, пока "
+        "внутренний мир рушится\n"
+        "• Алкоголь как анестезия: "
+        "почему он долго "
+        "работал как "
+        "стратегия "
+        "от тревоги, и чем "
+        "это опасно\n"
+        "• Жизнь без иллюзий: "
+        "что происходит, "
+        "когда убираешь "
+        "допинг, и как "
+        "строить себя "
+        "заново без героизма\n\n"
+        "🎁 Внутри 4 практических "
+        "приложения: "
+        "самодиагностика, "
+        "карта первых 30 дней, "
+        "разбор триггеров "
+        "и план действий "
+        "на случай срыва.\n\n"
+        "📄 PDF | 15 глав | На русском языке"
+    )
+
+
+def about_author_text():
+    return (
+        "Привет! Меня зовут Наталья.\n\n"
+        "Я не нарколог "
+        "и не психотерапевт. "
+        "Я женщина, "
+        "которая "
+        "прошла "
+        "через "
+        "всё это сама "
+        "и теперь "
+        "говорю "
+        "об этом открыто.\n\n"
+        "Я дипломированный "
+        "инструктор "
+        "НейроГрафики, "
+        "занимаю "
+        "руководящую "
+        "должность "
+        "в бюджетной сфере, "
+        "веду личные "
+        "консультации "
+        "и практикую "
+        "телесно-ориентированный "
+        "подход.\n\n"
+        "Эта книга "
+        "выросла "
+        "из того, "
+        "чего мне самой "
+        "отчаянно "
+        "не хватало "
+        "в самый "
+        "тёмный период: "
+        "живого, честного "
+        "голоса без фраз "
+        "«и тогда "
+        "я всё поняла». "
+        "Я делюсь "
+        "тем, что "
+        "знаю "
+        "и прожила."
+    )
 
 
 @asynccontextmanager
@@ -128,26 +275,70 @@ async def telegram_webhook(request: Request):
         chat_id = update.effective_chat.id
 
         if text.startswith("/start"):
+            await bot.send_message(
+                chat_id=chat_id,
+                text=welcome_text(user.first_name),
+                reply_markup=welcome_keyboard()
+            )
+
+    if update.callback_query:
+        query = update.callback_query
+        chat_id = query.message.chat.id
+        user = query.from_user
+        await query.answer()
+
+        if query.data == "about_book":
+            await bot.send_message(
+                chat_id=chat_id,
+                text=about_book_text(),
+                reply_markup=book_keyboard()
+            )
+
+        elif query.data == "about_author":
+            if AUTHOR_PHOTO_ID:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=AUTHOR_PHOTO_ID,
+                    caption=about_author_text(),
+                    reply_markup=buy_keyboard()
+                )
+            else:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=about_author_text(),
+                    reply_markup=buy_keyboard()
+                )
+
+        elif query.data == "buy":
             try:
                 payment_url = await create_yukassa_payment(chat_id, user.first_name)
                 keyboard = InlineKeyboardMarkup([[
                     InlineKeyboardButton(
-                        f"Оплатить {PRICE_RUB} ₽",
+                        f"💳 Оплатить {PRICE_RUB} ₽",
                         url=payment_url
                     )
                 ]])
-                greeting = (
-                    f"Привет, {user.first_name}! 👋\n\n"
-                    f"Купите «{BOOK_TITLE}» за {PRICE_RUB} ₽.\n"
-                    f"После оплаты вы автоматически "
-                    f"получите ссылку для входа "
-                    f"в закрытый канал."
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        "Ваша личная "
+                        "ссылка "
+                        "на оплату "
+                        "— готова!"
+                    ),
+                    reply_markup=keyboard
                 )
-                await update.message.reply_text(greeting, reply_markup=keyboard)
             except Exception as e:
                 logger.error(f"Payment error: {e}")
-                err = "Ошибка при создании ссылки на оплату. Попробуйте позже."
-                await update.message.reply_text(err)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        "Ошибка "
+                        "при создании "
+                        "ссылки. "
+                        "Попробуйте позже."
+                    )
+                )
 
     return {"ok": True}
 
