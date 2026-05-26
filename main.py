@@ -340,6 +340,15 @@ async def telegram_webhook(request: Request):
                     )
                 )
 
+    # Temp: reply with file_id when admin sends a photo
+    if update.message and update.message.photo and ADMIN_ID:
+        if str(update.effective_user.id) == str(ADMIN_ID):
+            file_id = update.message.photo[-1].file_id
+            await bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"AUTHOR_PHOTO_ID={file_id}"
+            )
+
     return {"ok": True}
 
 
