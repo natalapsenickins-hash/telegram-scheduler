@@ -13,7 +13,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # Настройки (берутся из переменных окружения)
 # ──────────────────────────────────────────────
 BOT_TOKEN        = os.getenv("BOT_TOKEN")           # Токен от BotFather
-CHANNEL_ID       = os.getenv("CHANNEL_ID")          # ID канала, напр. -1001234567890
+CHANNEL_ID       = os.getenv("CHANNEL_ID", "")      # ID канала, напр. -1001234567890
+ADMIN_ID         = os.getenv("ADMIN_ID", "")        # Ваш личный Telegram ID (для служебных сообщений)
 YUKASSA_SHOP_ID  = os.getenv("YUKASSA_SHOP_ID")     # ID магазина в ЮКассе
 YUKASSA_SECRET   = os.getenv("YUKASSA_SECRET_KEY")  # Секретный ключ ЮКассы
 PRICE_RUB        = os.getenv("PRICE_RUB", "990")    # Цена книги в рублях
@@ -136,6 +137,24 @@ async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, bot)
 
+    # Бот добавлен в новый чат/канал — сообщаем ID администратору
+    if update.my_chat_member:
+        chat = update.my_chat_member.chat
+        new_status = update.my_chat_member.new_chat_member.status
+        if new_status in ("administrator", "member"):
+            msg = (
+                f"✅ Бот добавлен в чат!\n"
+                f"Название: {chat.title}\n"
+                f"ID канала: <code>{chat.id}</code>\n\n"
+                f"Скопируйте ID и добавьте в Railway как переменную CHANNEL_ID"
+            )
+            logger.info(f"Бот добавлен в чат {chat.title} (ID: {chat.id})")
+            if ADMIN_ID:
+                try:
+                    await bot.send_message(chat_id=int(ADMIN_ID), text=msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"Не удалось отправить сообщение администратору: {e}")
+
     if update.message and update.message.text:
         text = update.message.text.strip()
         user = update.effective_user
@@ -170,35 +189,4 @@ async def telegram_webhook(request: Request):
 
 # ──────────────────────────────────────────────
 # Эндпоинт: вебхук от ЮКассы
-# ──────────────────────────────────────────────
-@app.post("/yukassa/webhook")
-async def yukassa_webhook(request: Request):
-    body = await request.json()
-    logger.info(f"ЮКасса вебхук: {json.dumps(body, ensure_ascii=False)}")
-
-    event   = body.get("event")
-    payment = body.get("object", {})
-
-    if event == "payment.succeeded":
-        metadata = payment.get("metadata", {})
-        chat_id_str = metadata.get("telegram_chat_id")
-
-        if chat_id_str:
-            await send_invite_link(int(chat_id_str))
-        else:
-            logger.warning("В платеже нет telegram_chat_id в метаданных!")
-
-    return {"status": "ok"}
-
-
-# ──────────────────────────────────────────────
-# Проверочный маршрут
-# ──────────────────────────────────────────────
-@app.get("/")
-async def health():
-    return {"status": "running", "bot": BOT_USERNAME}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+# ───────────────────────────────────────────
