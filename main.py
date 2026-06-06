@@ -2,6 +2,10 @@ import os
 import logging
 import uuid
 import json
+import sqlite3
+import csv
+import io
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 import httpx
@@ -20,6 +24,74 @@ AUTHOR_PHOTO_ID  = os.getenv("AUTHOR_PHOTO_ID", "")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+DB_PATH = "/app/users.db"
+
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            chat_id     INTEGER PRIMARY KEY,
+            first_name  TEXT,
+            username    TEXT,
+            status      TEXT DEFAULT 'visitor',
+            created_at  TEXT,
+            bought_at   TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_user(chat_id: int, first_name: str, username: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT OR IGNORE INTO users (chat_id, first_name, username, status, created_at)
+        VALUES (?, ?, ?, 'visitor', ?)
+    """, (chat_id, first_name, username or "", datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+
+def mark_buyer(chat_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        UPDATE users SET status = 'buyer', bought_at = ?
+        WHERE chat_id = ?
+    """, (datetime.now().isoformat(), chat_id))
+    conn.commit()
+    conn.close()
+
+
+def get_stats():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    total = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM users WHERE status = 'buyer'")
+    buyers = c.fetchone()[0]
+    conn.close()
+    return total, buyers
+
+
+def export_csv(status_filter=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if status_filter:
+        c.execute("SELECT * FROM users WHERE status = ? ORDER BY created_at DESC", (status_filter,))
+    else:
+        c.execute("SELECT * FROM users ORDER BY created_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["chat_id", "first_name", "username", "status", "created_at", "bought_at"])
+    writer.writerows(rows)
+    return output.getvalue().encode("utf-8")
 
 bot = Bot(token=BOT_TOKEN)
 BOT_USERNAME = None
@@ -288,6 +360,8 @@ def about_author_text():
 async def lifespan(app: FastAPI):
     global BOT_USERNAME
     try:
+        init_db()
+        logger.info("Database initialized.")
         me = await bot.get_me()
         BOT_USERNAME = me.username
         logger.info(f"Bot @{BOT_USERNAME} started.")
@@ -331,10 +405,41 @@ async def telegram_webhook(request: Request):
         chat_id = update.effective_chat.id
 
         if text.startswith("/start"):
+            save_user(chat_id, user.first_name, user.username)
             await bot.send_message(
                 chat_id=chat_id,
                 text=welcome_text(user.first_name),
                 reply_markup=welcome_keyboard()
+            )
+
+        elif text == "/stats" and str(chat_id) == ADMIN_ID:
+            total, buyers = get_stats()
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"📊 Статистика бота\n\n"
+                    f"Всего пользователей: {total}\n"
+                    f"Купили книгу: {buyers}\n"
+                    f"Не купили: {total - buyers}"
+                )
+            )
+
+        elif text == "/export" and str(chat_id) == ADMIN_ID:
+            csv_data = export_csv()
+            await bot.send_document(
+                chat_id=chat_id,
+                document=io.BytesIO(csv_data),
+                filename="all_users.csv",
+                caption="Все пользователи бота"
+            )
+
+        elif text == "/buyers" and str(chat_id) == ADMIN_ID:
+            csv_data = export_csv(status_filter="buyer")
+            await bot.send_document(
+                chat_id=chat_id,
+                document=io.BytesIO(csv_data),
+                filename="buyers.csv",
+                caption="Покупатели книги"
             )
 
     if update.callback_query:
@@ -417,6 +522,7 @@ async def yukassa_webhook(request: Request):
         metadata = payment.get("metadata", {})
         chat_id_str = metadata.get("telegram_chat_id")
         if chat_id_str:
+            mark_buyer(int(chat_id_str))
             await send_invite_link(int(chat_id_str))
     return {"status": "ok"}
 
