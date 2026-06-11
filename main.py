@@ -2,6 +2,7 @@ import os
 import logging
 import uuid
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 
 import httpx
@@ -18,14 +19,45 @@ BOOK_TITLE       = os.getenv("BOOK_TITLE", "Lichnoe Dno")
 ADMIN_ID         = os.getenv("ADMIN_ID", "")
 AUTHOR_PHOTO_ID  = os.getenv("AUTHOR_PHOTO_ID", "")
 
+DB_PATH = os.getenv("DB_PATH", "stats.db")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN)
 BOT_USERNAME = None
 
-# Трекинг посетителей в памяти (сбрасывается при перезапуске)
-_visitor_stats = {"users": set(), "starts": 0}
+
+# --- SQLite: постоянное хранилище статистики ---
+
+def db_init():
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS visitors (
+            user_id INTEGER PRIMARY KEY,
+            first_seen TEXT DEFAULT (datetime('now')),
+            starts INTEGER DEFAULT 1
+        )
+    """)
+    con.commit()
+    con.close()
+
+def db_record_visit(user_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        INSERT INTO visitors (user_id, starts)
+        VALUES (?, 1)
+        ON CONFLICT(user_id) DO UPDATE SET starts = starts + 1
+    """, (user_id,))
+    con.commit()
+    con.close()
+
+def db_get_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    unique = con.execute("SELECT COUNT(*) FROM visitors").fetchone()[0]
+    starts = con.execute("SELECT SUM(starts) FROM visitors").fetchone()[0] or 0
+    con.close()
+    return {"unique": unique, "starts": starts}
 
 
 async def create_yukassa_payment(chat_id: int, user_name: str) -> str:
@@ -78,20 +110,18 @@ async def get_stats_text() -> str:
         logger.error("Stats error: " + str(e))
         sales_text = "Ошибка загрузки данных ЮКасса."
 
-    # Посетители из памяти
-    unique = len(_visitor_stats["users"])
-    total_starts = _visitor_stats["starts"]
+    # Посетители из SQLite (постоянное хранилище)
+    v = db_get_stats()
     visitors_text = (
-        "Уникальных пользователей: " + str(unique) + "\n"
-        + "Всего запусков /start: " + str(total_starts) + "\n"
-        + "(счётчик сбрасывается при перезапуске)"
+        "Уникальных пользователей: " + str(v["unique"]) + "\n"
+        + "Всего запусков /start: " + str(v["starts"])
     )
 
     return (
-        "Статистика бота\n\n"
-        + "Посещения:\n"
+        "📊 Статистика бота\n\n"
+        + "👥 Посещения:\n"
         + visitors_text + "\n\n"
-        + "Продажи:\n"
+        + "💳 Продажи:\n"
         + sales_text
     )
 
@@ -347,6 +377,7 @@ def about_author_text():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global BOT_USERNAME
+    db_init()
     try:
         me = await bot.get_me()
         BOT_USERNAME = me.username
@@ -391,9 +422,8 @@ async def telegram_webhook(request: Request):
         chat_id = update.effective_chat.id
 
         if text.startswith("/start"):
-            # Трекинг посетителей
-            _visitor_stats["users"].add(user.id)
-            _visitor_stats["starts"] += 1
+            # Трекинг посетителей (постоянное хранилище)
+            db_record_visit(user.id)
             await bot.send_message(
                 chat_id=chat_id,
                 text=welcome_text(user.first_name),
